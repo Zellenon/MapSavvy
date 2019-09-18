@@ -33,8 +33,10 @@ class Widget(QWidget):
 	faultNum = 1000
 	PercentWater = 50
 	shift = 0
+	scale = 1
 	xRange = -1
 	yRange = -1
+	xRangeRange = range(0,1)
 
 	image = QImage(50, 50, QImage.Format_Indexed8)
 
@@ -71,8 +73,9 @@ class Widget(QWidget):
 		print(self.seedname)
 		print(self.seed)
 		nprand.seed(self.seed)
-		self.xRange = self.width()
-		self.yRange = self.height()
+		self.xRange = int(self.width()*self.scale)
+		self.yRange = int(self.height()*self.scale)
+		self.xRangeRange = range(0,self.xRange)
 		self.image = QImage(self.xRange, self.yRange, QImage.Format_Indexed8)
 		[self.image.setColor(w, qRgb(self.Red[w], self.Green[w], self.Blue[w])) for w in range(49)]
 
@@ -112,16 +115,15 @@ class Widget(QWidget):
 		self.alpha = nprand.uniform(low= -0.5, high= 0.5, size= self.faultNum) * math.pi
 		self.beta  = nprand.uniform(low= -0.5, high= 0.5, size= self.faultNum) * math.pi
 		self.shift = nprand.random(size= self.faultNum) * self.xRange
-		#self.shift = np.zeros(self.faultNum)
 		self.tanB  = np.tan(np.arccos(np.cos(self.alpha) * np.cos(self.beta)))
 		self.xsi   = (self.xRange / 2 - (self.xRange / math.pi) * self.beta)
 
 		print("Random Generation: " + str(GENERATION_TIME.tick()))
 
-		milestones = list(range(0,self.faultNum,self.faultNum//10))
+		milestones = list(range(1,self.faultNum,self.faultNum//10))
 		for i in range(self.faultNum):
 			if (i in milestones):
-				print("Fault " + str(i))
+				print("Fault " + str(i-1) + " (" + str(i*100//self.faultNum) + "%)")
 			self.GenerateFault(i)
 
 		delta = GENERATION_TIME.tick()
@@ -135,8 +137,7 @@ class Widget(QWidget):
 
 	def GenerateFault(self, fi: int): # fi = fault index
 		#                     Runs once for each fault
-		xRangeRange = range(self.xRange)
-		SinIterIndex = np.array(xRangeRange)
+		SinIterIndex = np.array(self.xRangeRange)
 		SinIterIndex = (self.xsi[fi] - SinIterIndex+self.xRange).astype(int)
 		SinIterIndex[SinIterIndex > len(self.SinIterPhi)-1] -= 1
 		SinIterIndexes = ((SinIterIndex+self.shift[fi]) % len(self.SinIterPhi)-1).astype(int)
@@ -144,7 +145,9 @@ class Widget(QWidget):
 		theta = (self.yRangeDivPi * np.arctan(atanArgs) + self.yRangeDiv2).astype(int)
 		theta[theta > self.yRange - 1] -= 1
 
-		self.WorldMapArray[theta,xRangeRange] +=self.flag[fi]
+		self.WorldMapArray[theta,self.xRangeRange] +=self.flag[fi]
+		#subsection = range(1000, 1500)
+		#self.WorldMapArray[theta[1000:1500], subsection] += self.flag[fi]
 
 
 	def FloodFill4(self, x: int, y: int, OldColor: int): # '4-connective floodfill algorithm'. Used for the ice-caps.
@@ -166,11 +169,14 @@ class Widget(QWidget):
 		self.ColorMap = np.zeros((self.yRange,self.xRange), dtype=float) # THIS LINE CAUSES THE STRIPES. IT __SHOULD__ BE OVERWRITTEN!
 		Histogram = np.zeros(32, dtype=int)
 		Color = 0
-		for x in range(self.xRange):
+		'''for x in range(self.xRange):
 			Color = self.WorldMapArray[0][x]
 			for i in range(self.yRange):
 				Color += self.WorldMapArray[i][x]
-				self.ColorMap[i][x] = Color
+				self.ColorMap[i][x] = Color'''
+		for x in self.xRangeRange:
+			self.ColorMap[:,x] = self.WorldMapArray[:,x].cumsum()
+
 
 		print("Color Mapping: " + str(DISPLAYTIMER.tick()))
 
@@ -233,6 +239,7 @@ class Widget(QWidget):
 		if (displayMode == 2):
 			[[self.image.setPixel(x, y, value) for x, value in enumerate(ylist)] for y, ylist in enumerate(self.ColorMap)]
 		[[self.image.setPixel(x,y,value) for x,value in enumerate(ylist)] for y,ylist in enumerate(self.ColorMap)]
+		#self.image = QImage(self.ColorMap,self.xRange,self.yRange)
 
 		print("Image Setting: " + str(DISPLAYTIMER.tick()))
 
@@ -242,7 +249,7 @@ class MainWindow(QMainWindow):
 		QMainWindow.__init__(self)
 		geometry = app.desktop().availableGeometry(self)
 		#self.setFixedSize(geometry.width() * 0.95, geometry.height() * 0.90)
-		self.setFixedSize(3000,2000)
+		self.setFixedSize(3200,2000)
 		self.setWindowTitle("MapSavvy")
 
 		PathManager.insureFolder(PathManager.libraryPath+"images")
