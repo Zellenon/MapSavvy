@@ -9,7 +9,7 @@ import numpy as np
 import numpy.random as nprand
 np.set_printoptions(threshold=np.inf, linewidth=10000)
 
-from PySide2.QtCore import Qt, Slot, QSize
+from PySide2.QtCore import Qt, Slot, QSize, Signal, QObject
 from PySide2.QtGui import QPixmap, QImage, qRgb
 from PySide2.QtWidgets import *
 from random import *
@@ -28,15 +28,19 @@ class Widget(QWidget):
 		self.generator = MapGenerator()
 
 	def generate(self):
-		scale = 0.5
+		self.layout = QHBoxLayout()
+		self.display = QLabel()
+		self.generator.displayCompleted.connect(self.updateImage)
+		#self.display.setPixmap(QPixmap.fromImage(self.generator.image))
+		self.layout.addWidget(self.display)
+		self.setLayout(self.layout)
+
+		scale = 0.75
 		size = (int(3000 * scale), int(2000 * scale))
 		self.generator.GenerateNewMap(size=size)
 
-		self.layout = QHBoxLayout()
-		self.display = QLabel()
+	def updateImage(self):
 		self.display.setPixmap(QPixmap.fromImage(self.generator.image))
-		self.layout.addWidget(self.display)
-		self.setLayout(self.layout)
 
 	def save(self):
 		print(self.generator.image.save(PathManager.path("images") + self.generator.seedname + " - " + str(self.generator.faultCount) + ".png"))

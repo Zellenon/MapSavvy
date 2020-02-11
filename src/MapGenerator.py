@@ -2,6 +2,7 @@ import json
 import random, sys, math, time
 import numpy as np
 import numpy.random as nprand
+from PySide2.QtCore import QObject, Signal, Slot
 np.set_printoptions(threshold=np.inf, linewidth=10000)
 
 from PySide2.QtCore import Qt, Slot, QSize
@@ -26,7 +27,9 @@ class tracker:
 		self.timer = time.time()
 		return x
 
-class MapGenerator:
+class MapGenerator(QObject):
+	displayCompleted = Signal(int)
+
 	# User - set Variables:
 	seedname = "abdc"
 	faultCount = 0
@@ -78,22 +81,7 @@ class MapGenerator:
 	# ---------------- GENERATION CODE -----------------
 	# --------------------------------------------------
 	def GenerateNewMap(self, **kwargs):
-		if 'faultNum' in kwargs and kwargs['faultNum']>0:
-			faultNum = kwargs['faultNum']
-		else:
-			#self.faultNum = int(10 * (pow(10, 2.2+2*random())))
-			faultNum = random.randint(20,70) * 1000
-			#self.faultNum = 2000
-		if 'percentWater' in kwargs:
-			self.percentWater = kwargs['percentWater']
-		if not 100 >= self.percentWater >= 0:
-			self.percentWater = 60
-		if ('size' in kwargs and len(kwargs)==2):
-			self.xRange = kwargs['size'][0]
-			self.yRange = kwargs['size'][1]
-		else:
-			self.xRange = 1000
-			self.yRange = 500
+		# Seed Generation or Interpretation
 		if ('seed' in kwargs and type(kwargs['seed']) == str):
 			self.seedname = kwargs['seed']
 		else:
@@ -103,9 +91,30 @@ class MapGenerator:
 		print(self.seedname)
 		print(self.seed)
 
-		self.WorldMapArray = np.zeros((self.yRange, self.xRange))
+		# Deciding Number of Faults
+		if 'faultNum' in kwargs and kwargs['faultNum']>0:
+			faultNum = kwargs['faultNum']
+		else:
+			#self.faultNum = int(10 * (pow(10, 2.2+2*random())))
+			faultNum = random.randint(5,70) * 1000
+			#self.faultNum = 2000
+		# Deciding Water Coverage %
+		if 'percentWater' in kwargs:
+			self.percentWater = kwargs['percentWater']
+		if not 100 >= self.percentWater >= 0:
+			self.percentWater = 60
+		# Size of The Map (in pixels)
+		if ('size' in kwargs and len(kwargs['size'])==2):
+			self.xRange = kwargs['size'][0]
+			self.yRange = kwargs['size'][1]
+		else:
+			self.xRange = 1000
+			self.yRange = 500
+
 		self.image = QImage(self.xRange, self.yRange, QImage.Format_Indexed8)
 		[self.image.setColor(w, qRgb(self.Red[w], self.Green[w], self.Blue[w])) for w in range(49)]
+
+		self.WorldMapArray = np.zeros((self.yRange, self.xRange))
 		self.SinIterPhi = np.array(range(self.xRange * 2))
 		self.SinIterPhi = self.SinIterPhi.astype(float)
 		self.SinIterPhi[:len(self.SinIterPhi) // 2] = np.sin(self.SinIterPhi[:len(self.SinIterPhi) // 2] * 2 * math.pi / self.xRange)
@@ -116,17 +125,25 @@ class MapGenerator:
 		self.yRangeDivPi = self.yRange / math.pi
 
 		self.faultCount = 0
-		self.AddFaults(faultNum)
+		while (self.faultCount < faultNum):
+			self.AddFaults(faultNum) #should be //5
+			self.display(0)
 
 		print("displaying")
-		self.display(0)
+		#self.display(0)
 		print("done")
 
 	def AddFaults(self, faultNum):
-		self.flag = nprand.choice((-1, 1), size=faultNum)
-		self.alpha = nprand.uniform(low=-0.5, high=0.5, size=faultNum) * math.pi
-		self.beta = nprand.uniform(low=-0.5, high=0.5, size=faultNum) * math.pi
-		self.shift = nprand.random(size=faultNum) * self.xRange
+		rawNumbers = nprand.random(size=faultNum * 4)
+		rawNumbers.resize(faultNum,4)
+		#self.flag = nprand.choice((-1, 1), size=faultNum)
+		self.flag = np.array([-1,1])[rawNumbers.round().astype(int)[:,0]]
+		#self.alpha = nprand.uniform(low=-0.5, high=0.5, size=faultNum) * math.pi
+		self.alpha = (rawNumbers[:,1]-0.5)*np.pi
+		#self.beta = nprand.uniform(low=-0.5, high=0.5, size=faultNum) * math.pi
+		self.beta = (rawNumbers[:,2]-0.5)*np.pi
+		#self.shift = nprand.random(size=faultNum) * self.xRange
+		self.shift = rawNumbers[:,3] * self.xRange
 
 		self.tanB = np.tan(np.arccos(np.cos(self.alpha) * np.cos(self.beta)))
 		self.xsi = (self.xRange / 2 - (self.xRange / math.pi) * self.beta)
@@ -168,81 +185,85 @@ class MapGenerator:
 			[[self.image.setPixel(x, y, value) for x, value in enumerate(ylist)] for y, ylist in enumerate(displayMap)]
 
 			print("Fault Debugging: " + str(DISPLAYTIMER.tick()))
-			return
+		else:
 
-		self.ColorMap = np.zeros((self.yRange,self.xRange), dtype=float) # THIS LINE CAUSES THE STRIPES. IT __SHOULD__ BE OVERWRITTEN!
-		Histogram = np.zeros(32, dtype=int)
-		Color = 0
-		'''for x in range(self.xRange):
-			Color = self.WorldMapArray[0][x]
-			for i in range(self.yRange):
-				Color += self.WorldMapArray[i][x]
-				self.ColorMap[i][x] = Color'''
-		for x in self.xRangeRange:
-			self.ColorMap[:,x] = self.WorldMapArray[:,x].cumsum()
+			self.ColorMap = np.zeros((self.yRange,self.xRange), dtype=float)
+			Histogram = np.zeros(32, dtype=int)
+			Color = 0
+			'''for x in range(self.xRange):
+				Color = self.WorldMapArray[0][x]
+				for i in range(self.yRange):
+					Color += self.WorldMapArray[i][x]
+					self.ColorMap[i][x] = Color'''
+			for x in self.xRangeRange:
+				self.ColorMap[:,x] = self.WorldMapArray[:,x].cumsum()
 
 
-		print("Color Mapping: " + str(DISPLAYTIMER.tick()))
+			print("Color Mapping: " + str(DISPLAYTIMER.tick()))
 
-		minimum = self.ColorMap.min()
-		maximum = self.ColorMap.max()
+			minimum = self.ColorMap.min()
+			maximum = self.ColorMap.max()
 
-		HistoCalcArray = np.copy(self.ColorMap)
-		HistoCalcArray = HistoCalcArray.astype(int)
-		HistoCalcArray = ((HistoCalcArray - HistoCalcArray.min()) / (HistoCalcArray.max() - HistoCalcArray.min())) * 30 + 1
-		HistoCalcArray = HistoCalcArray.astype(int)
-		x, Histogram = np.unique(HistoCalcArray,return_counts=True)
+			HistoCalcArray = np.copy(self.ColorMap)
+			HistoCalcArray = HistoCalcArray.astype(int)
+			HistoCalcArray = ((HistoCalcArray - HistoCalcArray.min()) / (HistoCalcArray.max() - HistoCalcArray.min())) * 30 + 1
+			HistoCalcArray = HistoCalcArray.astype(int)
+			x, Histogram = np.unique(HistoCalcArray,return_counts=True)
 
-		print("Histogram Calculation: " + str(DISPLAYTIMER.tick()))
+			print("Histogram Calculation: " + str(DISPLAYTIMER.tick()))
 
-		Threshold = (self.percentWater * self.xRange * self.yRange) / 100
-		Count = 0
-		j = 0
-		for j in range(len(Histogram)):
-			Count += Histogram[j]
-			if (Count > Threshold):
-				break
-		Threshold = j * (maximum - minimum + 1) / 30 + minimum
+			Threshold = (self.percentWater * self.xRange * self.yRange) / 100
+			Count = 0
+			j = 0
+			for j in range(len(Histogram)):
+				Count += Histogram[j]
+				if (Count > Threshold):
+					break
+			Threshold = j * (maximum - minimum + 1) / 30 + minimum
 
-		# Scale ColorMap to colorrange in a way that gives you
-		# a certain Ocean / Land ratio
-		shape = self.ColorMap.shape
-		self.ColorMap = self.ColorMap.reshape(shape[0]*shape[1])
-		colorCopy = self.ColorMap.copy()
-		self.ColorMap[self.ColorMap<Threshold] = (colorCopy[colorCopy<Threshold] - minimum) / (Threshold - minimum) * 15. #+1.
-		self.ColorMap[colorCopy >= Threshold] = (colorCopy[colorCopy >= Threshold] - Threshold) / (maximum - Threshold) * 15. + 16.
-		self.ColorMap = self.ColorMap.astype(int)
-		self.ColorMap = self.ColorMap.reshape(shape)
+			# Scale ColorMap to colorrange in a way that gives you
+			# a certain Ocean / Land ratio
+			shape = self.ColorMap.shape
+			self.ColorMap = self.ColorMap.reshape(shape[0]*shape[1])
+			colorCopy = self.ColorMap.copy()
+			self.ColorMap[self.ColorMap<Threshold] = (colorCopy[colorCopy<Threshold] - minimum) / (Threshold - minimum) * 15. #+1.
+			self.ColorMap[colorCopy >= Threshold] = (colorCopy[colorCopy >= Threshold] - Threshold) / (maximum - Threshold) * 15. + 16.
+			self.ColorMap = self.ColorMap.astype(int)
+			self.ColorMap = self.ColorMap.reshape(shape)
 
-		print("Colormap Weighting: " + str(DISPLAYTIMER.tick()))
+			print("Colormap Weighting: " + str(DISPLAYTIMER.tick()))
 
-		''' PEAK CULLING PROTOTYPE
-		* p = perlin noise
-		* c = most extreme possible reduction(probably 0.6x?)
-		*pc = local reduction
-		* l = local level
-		* l = -pc(l - 1) ^ 2 + pc < - Only works on values 0 - 1. Map somehow.
-		* l = M * (-1 * c * ((x - m) / M - 1) ^ 2 + c) + m < - Mapped version((M) ax, (m) in )
-		* // *min = 0; max = 0;
-		for (int i = 0; i < xRange * yRange; i++) {
-			min = min(min, ColorMap[i / xRange][i % xRange]);
-			max = max(max, ColorMap[i / xRange][i % xRange]);
-		}
-		float c = 0.4, pc = 0;
-		for (int x = 0; x < xRange; x++) {
-			for (int y = 0; y < yRange; y++) {
-				int l = ColorMap[y][x];
-				pc = noise(x * 0.01, y * 0.01) * 0.5+0.5; // Whatever is after noise() is used to map the noise.Noise() can
-					return 0, and we don 't want that, so we have to change it SOMEhow.
-				float mix = noise(x * 0.01 + 1, y * 0.01);
-				l = (int)((max * (-1 * pc * pow(((float(l) - min) / max - 1), 2) + pc) + min) * mix + ((1 - mix) * l));
-				// l = (int)(pc * 48); ColorMap[y][x] = l; 
-			} 
-		}'''
-		print(self.ColorMap.shape)
-		if (displayMode == 2):
-			[[self.image.setPixel(x, y, value) for x, value in enumerate(ylist)] for y, ylist in enumerate(self.ColorMap)]
-		[[self.image.setPixel(x,y,value) for x,value in enumerate(ylist)] for y,ylist in enumerate(self.ColorMap)]
-		#self.image = QImage(self.ColorMap,self.xRange,self.yRange)
+			''' PEAK CULLING PROTOTYPE
+			* p = perlin noise
+			* c = most extreme possible reduction(probably 0.6x?)
+			*pc = local reduction
+			* l = local level
+			* l = -pc(l - 1) ^ 2 + pc < - Only works on values 0 - 1. Map somehow.
+			* l = M * (-1 * c * ((x - m) / M - 1) ^ 2 + c) + m < - Mapped version((M) ax, (m) in )
+			* // *min = 0; max = 0;
+			for (int i = 0; i < xRange * yRange; i++) {
+				min = min(min, ColorMap[i / xRange][i % xRange]);
+				max = max(max, ColorMap[i / xRange][i % xRange]);
+			}
+			float c = 0.4, pc = 0;
+			for (int x = 0; x < xRange; x++) {
+				for (int y = 0; y < yRange; y++) {
+					int l = ColorMap[y][x];
+					pc = noise(x * 0.01, y * 0.01) * 0.5+0.5; // Whatever is after noise() is used to map the noise.Noise() can
+						return 0, and we don 't want that, so we have to change it SOMEhow.
+					float mix = noise(x * 0.01 + 1, y * 0.01);
+					l = (int)((max * (-1 * pc * pow(((float(l) - min) / max - 1), 2) + pc) + min) * mix + ((1 - mix) * l));
+					// l = (int)(pc * 48); ColorMap[y][x] = l; 
+				} 
+			}'''
+			print(self.ColorMap.shape)
+			if (displayMode == 2):
+				for y,ylist in enumerate(self.ColorMap):
+					for x, value in enumerate(ylist):
+						self.image.setPixel(x, y, value)
+			else:
+				[[self.image.setPixel(x, y, value) for x, value in enumerate(ylist)] for y, ylist in enumerate(self.ColorMap)]
+			#self.image = QImage(self.ColorMap,self.xRange,self.yRange)
 
-		print("Image Setting: " + str(DISPLAYTIMER.tick()))
+			print("Image Setting: " + str(DISPLAYTIMER.tick()))
+		self.displayCompleted.emit(displayMode)
