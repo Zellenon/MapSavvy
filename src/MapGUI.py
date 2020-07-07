@@ -9,22 +9,38 @@ class Widget(QWidget):
 
     def __init__(self):
         QWidget.__init__(self)
-        self.startup()
-
-    def startup(self):
         self.generator = MapGenerator()
 
-    def generate(self):
-        self.layout = QHBoxLayout()
+        self.mainLayout = QVBoxLayout()
+        self.topBar = QWidget()
+        self.topBarLayout = QHBoxLayout()
+        self.topBar.setLayout(self.topBarLayout)
         self.display = QLabel()
-        self.generator.displayCompleted.connect(self.updateImage)
-        #self.display.setPixmap(QPixmap.fromImage(self.generator.image))
-        self.layout.addWidget(self.display)
-        self.setLayout(self.layout)
+        self.mainLayout.addWidget(self.topBar)
+        self.mainLayout.addWidget(self.display)
+        self.setLayout(self.mainLayout)
 
-        scale = 0.5
+        self.topBar.setMaximumHeight(80)
+        self.startButton = QPushButton("Generate")
+        self.progressBar = QProgressBar()
+        self.progressBar.setRange(0,200)
+        self.generator.updateProgress.connect(self.progressBar.setValue)
+        self.topBarLayout.addWidget(self.startButton)
+        self.topBarLayout.addWidget(self.progressBar)
+
+        self.generator.displayCompleted.connect(self.updateImage)
+        self.generator.printUpdate.connect(self.printUpdateToConsole)
+        #self.display.setPixmap(QPixmap.fromImage(self.generator.image))
+
+        scale = 0.25
         size = (int(3000 * scale), int(2000 * scale))
-        self.generator.GenerateNewMap(size=size)
+        self.generator.configure(size=size)
+
+    def generate(self):
+        self.generator.start()
+
+    def printUpdateToConsole(self, message):
+        print(message)
 
     def updateImage(self):
         self.display.setPixmap(QPixmap.fromImage(self.generator.image))
